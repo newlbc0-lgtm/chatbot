@@ -240,3 +240,66 @@ async def kakao_webhook(request: Request):
         # 오류 발생 시 기본 에러 응답 반환
         error_response = build_simple_text_response("요청을 처리하는 도중 에러가 발생했습니다. 잠시 후 다시 시도해 주세요.")
         return JSONResponse(content=error_response, status_code=200)
+
+
+import os
+import urllib.request
+
+NAVER_TALK_TOKEN = os.getenv("NAVER_TALK_TOKEN", "Zx3Yx1mLRz2Go1f8muxu")
+
+def send_naver_talktalk_reply(user_key: str, text: str):
+    """
+    네이버 톡톡 사용자에게 메시지를 보냅니다. (보내기 API)
+    """
+    try:
+        url = "https://gw.talk.naver.com/v1/chat"
+        headers = {
+            "Content-Type": "application/json;charset=UTF-8",
+            "Authorization": NAVER_TALK_TOKEN
+        }
+        payload = {
+            "event": "send",
+            "user": user_key,
+            "textContent": {
+                "text": text
+            }
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        with urllib.request.urlopen(req) as resp:
+            print(f"[Naver Send API Status]: {resp.status}")
+    except Exception as e:
+        print(f"[Error in send_naver_talktalk_reply]: {e}")
+
+
+@app.post("/naver/webhook")
+async def naver_webhook(request: Request):
+    """
+    네이버 톡톡 챗봇API 웹훅 요청 수신 및 자동 답장 엔드포인트
+    """
+    try:
+        data = await request.json()
+        event_type = data.get("event", "")
+        user_key = data.get("user", "")
+        
+        # 텍스트 메시지 내용 추출
+        text_content = data.get("textContent", {}).get("text", "")
+        print(f"[Naver TalkTalk Received] Event: '{event_type}' | User: '{user_key}' | Text: '{text_content}'")
+
+        # 사용자가 메시지를 보낸 이벤트일 경우 자동 답장 보냄
+        if event_type == "send" and user_key and text_content:
+            reply_text = (
+                f"안녕하세요! GIDC광장부동산 네이버 톡톡 AI 상담 봇입니다. 🤖\n\n"
+                f"보내주신 문의 내용: \"{text_content}\"\n\n"
+                f"무엇을 도와드릴까요?"
+            )
+            send_naver_talktalk_reply(user_key, reply_text)
+
+        # 네이버 톡톡 웹훅 검증 수신 성공 응답 (S0000)
+        return JSONResponse(content={"resultCode": "S0000", "message": "Success"}, status_code=200)
+
+    except Exception as e:
+        print(f"[Error in naver_webhook]: {e}")
+        return JSONResponse(content={"resultCode": "E0000", "message": str(e)}, status_code=200)
+
+
