@@ -12,41 +12,80 @@ try:
 except ImportError:
     anthropic = None
 
-from knowledge_base import CLAUDE_SYSTEM_PROMPT
+try:
+    from knowledge_base import CLAUDE_SYSTEM_PROMPT
+except ImportError:
+    CLAUDE_SYSTEM_PROMPT = """
+너는 'GIDC 광장부동산'의 24시간 대표 AI 실장님이야.
+스마트폰(카카오톡, 네이버 톡톡)으로 문의하는 손님에게 친절하고 전문적이며 명쾌하게 답변해줘.
+
+[중개업소 정보]
+- 상호: GIDC 광장부동산
+- 위치: 경기도 광명시 일직로 43 (KTX 광명역 도보 5~10분 거리, GIDC 광명역 건물 내)
+- 주차: 지하 대형 주차장 완비 (방문 상담 시 무료 주차 등록)
+- 시세: 지식산업센터 소형(10평대), 중형(20~30평대), 대형/드라이브인 매물 다수 보유
+
+친절하게 2~4문장 정도로 답변해줘.
+"""
+
+try:
+    from google_sheets import get_live_google_sheets_knowledge
+except ImportError:
+    def get_live_google_sheets_knowledge():
+        return ""
 
 app = FastAPI(
     title="KakaoTalk & Naver TalkTalk Dual Chatbot Server",
-    description="FastAPI Backend with Anthropic Claude AI Integration for GIDC Plaza Real Estate",
+    description="FastAPI Backend with Anthropic Claude AI & Google Sheets Integration for GIDC Plaza Real Estate",
     version="2.0.0",
 )
 
+
 # Anthropic API Key & Naver Token
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
 NAVER_TALK_TOKEN = os.getenv("NAVER_TALK_TOKEN", "Zx3Yx1mLRz2Go1f8muxu")
 
 
 def call_claude_ai(user_message: str) -> str:
     """
-    Claude API를 호출하여 지식베이스 기반의 부동산 전문 답변을 생성합니다.
+    Claude API를 호출하여 실시간 구글 스프레드시트 기반의 부동산 전문 답변을 생성합니다.
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY)
+    api_key = os.getenv("ANTHROPIC_API_KEY", "").strip() or ANTHROPIC_API_KEY
     if not api_key:
-        print("[Claude AI Info] ANTHROPIC_API_KEY가 설정되지 않아 기본 안내로 응답합니다.")
-        return (
-            f"안녕하세요! GIDC광장부동산 챗봇입니다. 🤖\n\n"
-            f"보내주신 문의: \"{user_message}\"\n\n"
-            f"현재 AI 실장님 연결 설정 중입니다. 1:1 빠른 전화 상담이나 방문 안내는 대표 번호로 문의해 주시기 바랍니다!"
-        )
+        print("[Claude AI Error] ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
+        return f"안녕하세요! GIDC광장부동산입니다. 🤖\n\n문의해주신 내용(\"{user_message}\")에 대해 전문 실장님이 신속히 확인 후 안내 도와드리겠습니다!"
+
 
     if not anthropic:
         print("[Claude AI Error] anthropic 패키지가 설치되어 있지 않습니다.")
         return f"안녕하세요! GIDC광장부동산입니다. 문의주신 내용(\"{user_message}\") 확인 후 안내 도와드리겠습니다."
 
-    # 지원 모델 목록 (최신 모델부터 우선 호출)
+    # 구글 스프레드시트 지식 데이터 실시간 조회
+    live_sheet_knowledge = get_live_google_sheets_knowledge()
+    if live_sheet_knowledge:
+        system_prompt = f"""
+너는 'GIDC 광장부동산'의 24시간 대표 AI 실장님이야.
+손님의 질문에 아래 [실시간 구글 스프레드시트 지식 데이터]를 최우선으로 참고해서 답변해줘:
+
+{live_sheet_knowledge}
+
+[기본 지식 보조 정보]
+{CLAUDE_SYSTEM_PROMPT}
+
+[답변 작성 수칙]
+1. 친절하고 신뢰감 주는 말투(존댓말)를 사용해.
+2. 모바일 화면에 맞게 2~4문장 정도로 명확하게 작성해.
+3. 구글 스프레드시트의 최신 정보를 바탕으로 답장해줘.
+"""
+    else:
+        system_prompt = CLAUDE_SYSTEM_PROMPT
+
+    # 지원 모델 목록 (최신 검증 모델부터 우선 호출)
     candidate_models = [
-        "claude-sonnet-4-6",
-        "claude-3-5-sonnet-20241022",
         "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-6",
+        "claude-sonnet-4-5-20250929",
+        "claude-3-5-sonnet-20241022",
         "claude-3-haiku-20240307"
     ]
 
@@ -57,7 +96,7 @@ def call_claude_ai(user_message: str) -> str:
             response = client.messages.create(
                 model=model_name,
                 max_tokens=600,
-                system=CLAUDE_SYSTEM_PROMPT,
+                system=system_prompt,
                 messages=[
                     {"role": "user", "content": user_message}
                 ]
@@ -70,6 +109,7 @@ def call_claude_ai(user_message: str) -> str:
             continue
 
     return f"안녕하세요! GIDC광장부동산입니다. 🤖\n\n문의해주신 내용(\"{user_message}\")에 대해 전문 실장님이 신속히 확인 후 안내 도와드리겠습니다!"
+
 
 
 
