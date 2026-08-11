@@ -78,8 +78,8 @@ def call_claude_ai(user_message: str) -> str:
 {CLAUDE_SYSTEM_PROMPT}
 
 [답변 작성 수칙]
-1. 친절하고 신뢰감 주는 말투(존댓말)를 사용해.
-2. 모바일 화면에 맞게 2~4문장 정도로 명확하게 작성해.
+1. 카카오톡 5초 답변 제한에 맞춰 2~3문장 이내로 핵심만 친절하고 명쾌하게 답변해.
+2. 모바일 화면에서 한눈에 들어오도록 너무 길지 않게 작성해.
 3. 구글 스프레드시트의 최신 정보를 바탕으로 답장해줘.
 """
     else:
@@ -101,12 +101,14 @@ def call_claude_ai(user_message: str) -> str:
         try:
             response = client.messages.create(
                 model=model_name,
-                max_tokens=600,
+                max_tokens=180,
                 system=system_prompt,
                 messages=[
                     {"role": "user", "content": user_message}
                 ]
             )
+
+
             ai_reply = response.content[0].text.strip()
             print(f"[Claude AI Reply Success ({model_name})]: {ai_reply}")
             return ai_reply
