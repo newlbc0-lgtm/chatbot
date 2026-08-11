@@ -252,7 +252,7 @@ def send_naver_talktalk_reply(user_key: str, text: str):
     네이버 톡톡 사용자에게 메시지를 보냅니다. (보내기 API)
     """
     try:
-        url = "https://gw.talk.naver.com/v1/chat"
+        url = "https://gw.talk.naver.com/chatbot/v1/event"
         headers = {
             "Content-Type": "application/json;charset=UTF-8",
             "Authorization": NAVER_TALK_TOKEN
@@ -267,9 +267,11 @@ def send_naver_talktalk_reply(user_key: str, text: str):
         data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
         with urllib.request.urlopen(req) as resp:
-            print(f"[Naver Send API Status]: {resp.status}")
+            res_data = resp.read().decode("utf-8")
+            print(f"[Naver Send API Response]: {res_data}")
     except Exception as e:
         print(f"[Error in send_naver_talktalk_reply]: {e}")
+
 
 
 @app.post("/naver/webhook")
