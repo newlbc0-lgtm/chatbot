@@ -51,9 +51,13 @@ def call_claude_ai(user_message: str) -> str:
     Claude API를 호출하여 실시간 구글 스프레드시트 기반의 부동산 전문 답변을 생성합니다.
     """
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip() or ANTHROPIC_API_KEY
+    if api_key and not api_key.startswith("sk-ant-"):
+        api_key = "sk-ant-api03--" + api_key
+
     if not api_key:
         print("[Claude AI Error] ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
         return f"안녕하세요! GIDC광장부동산입니다. 🤖\n\n문의해주신 내용(\"{user_message}\")에 대해 전문 실장님이 신속히 확인 후 안내 도와드리겠습니다!"
+
 
 
     if not anthropic:
@@ -91,6 +95,7 @@ def call_claude_ai(user_message: str) -> str:
 
     client = anthropic.Anthropic(api_key=api_key)
 
+    last_error = ""
     for model_name in candidate_models:
         try:
             response = client.messages.create(
@@ -105,10 +110,12 @@ def call_claude_ai(user_message: str) -> str:
             print(f"[Claude AI Reply Success ({model_name})]: {ai_reply}")
             return ai_reply
         except Exception as e:
+            last_error = str(e)
             print(f"[Claude AI Model Try Failed ({model_name})]: {e}")
             continue
 
-    return f"안녕하세요! GIDC광장부동산입니다. 🤖\n\n문의해주신 내용(\"{user_message}\")에 대해 전문 실장님이 신속히 확인 후 안내 도와드리겠습니다!"
+    return f"안녕하세요! GIDC광장부동산입니다. 🤖\n(AI 연결 상태: {last_error})"
+
 
 
 
