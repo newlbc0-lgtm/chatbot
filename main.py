@@ -1,7 +1,9 @@
+import json
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, Field
+
 
 app = FastAPI(
     title="KakaoTalk Chatbot Server",
