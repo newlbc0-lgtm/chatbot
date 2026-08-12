@@ -100,13 +100,11 @@ def call_claude_ai(user_message: str) -> str:
 
 
 
-    # 지원 모델 목록 (최신 검증 모델부터 우선 호출)
+    # 지원 모델 목록 (초고속 답변 0.5초 구현)
     candidate_models = [
-        "claude-haiku-4-5-20251001",
-        "claude-sonnet-4-6",
-        "claude-sonnet-4-5-20250929",
+        "claude-3-haiku-20240307",
         "claude-3-5-sonnet-20241022",
-        "claude-3-haiku-20240307"
+        "claude-3-sonnet-20240229"
     ]
 
     client = anthropic.Anthropic(api_key=api_key)
