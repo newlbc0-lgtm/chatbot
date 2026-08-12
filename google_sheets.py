@@ -49,13 +49,12 @@ def get_live_google_sheets_knowledge() -> str:
     if default_data and len(default_data) > 5:
         data_parts.append(f"[구글 시트 지식 데이터]\n{default_data}")
 
-    faq_data = get_sheet_data_as_csv("FAQ")
-    if faq_data and faq_data != default_data and len(faq_data) > 5:
-        data_parts.append(f"[구글 시트 FAQ 데이터]\n{faq_data}")
-
-    property_data = get_sheet_data_as_csv("매물")
-    if property_data and property_data != default_data and len(property_data) > 5:
-        data_parts.append(f"[구글 시트 매물 시세 데이터]\n{property_data}")
+    # 다양한 탭 데이터 동적 읽기 (FAQ, 매물, 설계제원, 건물정보)
+    additional_tabs = ["FAQ", "매물", "설계제원", "건물정보"]
+    for tab_name in additional_tabs:
+        tab_data = get_sheet_data_as_csv(tab_name)
+        if tab_data and tab_data != default_data and len(tab_data) > 5:
+            data_parts.append(f"[구글 시트 {tab_name} 데이터]\n{tab_data}")
 
     _cache_data = "\n\n".join(data_parts).strip()
     _cache_time = now
