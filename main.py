@@ -143,8 +143,20 @@ def smart_direct_knowledge_lookup(user_message: str) -> str:
     msg = user_message.strip().lower()
     sheet_data = get_live_google_sheets_knowledge()
 
-    # 1. 사장님이 구글 시트에 직접 작성하신 질문/답변 데이터 파싱 (최우선 순위)
+    # 구글 시트에 직접 등록하신 질문/답변 데이터 파싱
     lines = sheet_data.split("\n")
+
+    # 몇층/위치 관련 주차 문의 특화 (예: "몇층에 주차해?", "어디에 주차", "방문 주차")
+    if ("몇층" in msg or "어디" in msg or "방문" in msg or "층" in msg) and "주차" in msg:
+        for line in lines:
+            if "지상 3층" in line or "방문객 전용" in line or "방문객 주차" in line:
+                if '"' in line and '","' in line:
+                    parts = line.split('","')
+                    if len(parts) >= 2:
+                        val = parts[1].strip('"').strip()
+                        if val and "방문객" in val:
+                            return f"안녕하세요! GIDC 광장부동산입니다. 😊\n\n{val}"
+
     best_key = ""
     best_val = ""
 
@@ -155,9 +167,8 @@ def smart_direct_knowledge_lookup(user_message: str) -> str:
                 key = parts[0].strip('"').strip()
                 val = '","'.join(parts[1:]).strip('"').strip()
                 
-                # 구글 시트에 적힌 키워드("방문객 주차")가 손님 질문에 포함된 경우
+                # 구글 시트에 적힌 키워드가 손님 질문에 포함된 경우
                 if key and key != "질문(키워드)" and (key.lower() in msg or (len(key) >= 2 and key.lower() in msg.replace(" ", ""))):
-                    # 더 구체적인 긴 키워드 우선 (예: "주차" 보다 "방문객 주차" 우선)
                     if len(key) > len(best_key):
                         best_key = key
                         best_val = val
