@@ -137,28 +137,15 @@ def call_claude_ai(user_message: str) -> str:
 
 def smart_direct_knowledge_lookup(user_message: str) -> str:
     """
-    구글 시트에 사장님이 직접 등록하신 키워드(예: '방문객 주차', '영업시간' 등)를 최우선으로 검색하여
-    사장님이 입력하신 정답 그대로 정확히 대답합니다.
+    파이썬 하드코딩(IF문)을 100% 제거하고, 사장님이 구글 시트에 작성하신 모든 행(A열: 질문/키워드, B열: 답변)을
+    동적으로 자동 파싱하여, 어떠한 질문이든 코드 수정 없이 구글 시트 데이터만으로 대답합니다.
     """
-    msg = user_message.strip().lower()
+    msg = user_message.strip().lower().replace(" ", "")
     sheet_data = get_live_google_sheets_knowledge()
-
-    # 구글 시트에 직접 등록하신 질문/답변 데이터 파싱
     lines = sheet_data.split("\n")
 
-    # 몇층/위치 관련 주차 문의 특화 (예: "몇층에 주차해?", "어디에 주차", "방문 주차")
-    if ("몇층" in msg or "어디" in msg or "방문" in msg or "층" in msg) and "주차" in msg:
-        for line in lines:
-            if "지상 3층" in line or "방문객 전용" in line or "방문객 주차" in line:
-                if '"' in line and '","' in line:
-                    parts = line.split('","')
-                    if len(parts) >= 2:
-                        val = parts[1].strip('"').strip()
-                        if val and "방문객" in val:
-                            return f"안녕하세요! GIDC 광장부동산입니다. 😊\n\n{val}"
-
-    best_key = ""
     best_val = ""
+    max_score = 0
 
     for line in lines:
         if line.startswith('"') and '","' in line:
@@ -166,33 +153,26 @@ def smart_direct_knowledge_lookup(user_message: str) -> str:
             if len(parts) >= 2:
                 key = parts[0].strip('"').strip()
                 val = '","'.join(parts[1:]).strip('"').strip()
-                
-                # 구글 시트에 적힌 키워드가 손님 질문에 포함된 경우
-                if key and key != "질문(키워드)" and (key.lower() in msg or (len(key) >= 2 and key.lower() in msg.replace(" ", ""))):
-                    if len(key) > len(best_key):
-                        best_key = key
-                        best_val = val
+                if not key or key == "질문(키워드)":
+                    continue
+
+                clean_key = key.lower().replace(" ", "")
+                # 키워드 일치 점수 계산 (구글 시트 키워드가 손님 질문에 포함된 경우)
+                if clean_key in msg or (len(clean_key) >= 2 and clean_key in msg):
+                    score = len(clean_key) * 10
+                else:
+                    # 부분 글자 일치 점수
+                    common_chars = set(clean_key) & set(msg)
+                    score = len(common_chars)
+
+                if score > max_score and score >= 2:
+                    max_score = score
+                    best_val = val
 
     if best_val:
         return f"안녕하세요! GIDC 광장부동산입니다. 😊\n\n{best_val}"
 
-    # 2. 건물 설계제원 보조 검색
-    if any(k in msg for k in ["층고", "높이", "천장고", "천정고"]):
-        if any(f"{i}층" in msg for i in range(2, 5)):
-            return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 2층~4층 (드라이브인 공장)의 층고는 5.1m이며, 천장고(실제 이용 높이)는 4.0m입니다."
-        elif any(f"{i}층" in msg for i in range(5, 27)):
-            return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 5층~26층 (사무실)의 층고는 3.6m이며, 천장고(실제 이용 높이)는 2.7m입니다."
-        elif "29층" in msg or "최상층" in msg:
-            return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 29층 (최상층)의 층고는 3.8m이며, 천장고는 2.7m입니다."
-        elif any(k in msg for k in ["지하", "B1", "B2"]):
-            return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지하 1층 층고는 6.0m(천장고 3.3m), 지하 2층 층고는 5.8m(천장고 3.3m)입니다."
-        return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 5층~26층 사무실 층고는 3.6m (천장고 2.7m), 지상 2층~4층 드라이브인 층고는 5.1m (천장고 4.0m)입니다."
-
-    if any(k in msg for k in ["엘리베이터", "승강기", "화물", "인화물"]):
-        return "안녕하세요! GIDC 광장부동산입니다. 🏢 GIDC 건물에는 승객용 25대, 비상용 6대, 38인승 대형 화물용 인화물 3대를 포함해 총 31대의 승강기가 완비되어 있습니다."
-
-    # 기본 응답
-    return "안녕하세요! GIDC 광장부동산입니다. 😊 문의해 주신 내용 확인 후 저희 담당 실장님이 친절히 안내해 드리고 있습니다. 성함과 연락처를 남겨주시면 빠르게 연락드리겠습니다! (대표전화: 02-897-8333)"
+    return "안녕하세요! GIDC 광장부동산입니다. 😊 문의해 주신 내용 확인 후 담당 실장님이 친절히 안내해 드리고 있습니다. 성함과 연락처를 남겨주시면 빠르게 연락드리겠습니다! (대표전화: 02-897-8333)"
 
 
 
