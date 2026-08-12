@@ -3,7 +3,8 @@ import json
 import urllib.request
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 # Claude SDK Import
@@ -37,7 +38,16 @@ except ImportError:
 app = FastAPI(
     title="KakaoTalk & Naver TalkTalk Dual Chatbot Server",
     description="FastAPI Backend with Anthropic Claude AI & Google Sheets Integration for GIDC Plaza Real Estate",
-    version="2.0.0",
+    version="2.1.0",
+)
+
+# CORS middleware for Web Widget
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -307,6 +317,16 @@ async def home_page():
                 <p style="margin: 8px 0 0 0; font-size: 0.85rem;">네이버 톡톡 챗봇API Webhook 엔드포인트</p>
             </div>
 
+            <div class="endpoint-card">
+                <div><span class="method get">GET</span><span class="url">/widget.js</span></div>
+                <p style="margin: 8px 0 0 0; font-size: 0.85rem;">무로그인 홈페이지 챗봇 부착용 자바스크립트 위젯</p>
+            </div>
+
+            <div class="endpoint-card">
+                <div><span class="method get">GET</span><span class="url">/widget-demo</span></div>
+                <p style="margin: 8px 0 0 0; font-size: 0.85rem;">웹 위젯 실시간 작동 미리보기 데모 페이지</p>
+            </div>
+
             <div class="footer">
                 FastAPI Chatbot Backend &bull; Powered by Anthropic Claude 3.5
             </div>
@@ -408,3 +428,458 @@ async def naver_webhook(request: Request):
     except Exception as e:
         print(f"[Error in naver_webhook]: {e}")
         return JSONResponse(content={"resultCode": "E0000", "message": str(e)}, status_code=200)
+
+
+# -----------------------------------------------------------------------------
+# Web Chatbot Widget Schemas & Endpoints
+# -----------------------------------------------------------------------------
+class WebChatRequest(BaseModel):
+    message: str
+
+
+@app.post("/api/chat")
+async def web_chat(req: WebChatRequest):
+    """
+    일반 웹사이트용 챗봇 API (로그인 불필요, 실시간 구글시트 + Claude AI)
+    """
+    try:
+        user_msg = req.message.strip()
+        if not user_msg:
+            return JSONResponse(content={"reply": "질문을 입력해 주세요.", "status": "error"}, status_code=400)
+
+        print(f"[Web Chat Received]: '{user_msg}'")
+        reply = call_claude_ai(user_msg)
+        return JSONResponse(content={"reply": reply, "status": "success"}, status_code=200)
+
+    except Exception as e:
+        print(f"[Error in web_chat API]: {e}")
+        return JSONResponse(
+            content={"reply": "답변을 생성하는 도중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.", "status": "error"},
+            status_code=500
+        )
+
+
+@app.get("/widget.js", response_class=Response)
+async def get_widget_js():
+    """
+    어느 웹사이트에서나 <script src=".../widget.js"></script> 1줄로 부착할 수 있는 자바스크립트 위젯
+    """
+    js_code = """(function() {
+  if (window.GIDC_CHATBOT_LOADED) return;
+  window.GIDC_CHATBOT_LOADED = true;
+
+  var scriptTag = document.currentScript;
+  var baseUrl = "https://chatbot-9g4i.onrender.com";
+  if (scriptTag && scriptTag.src) {
+    try {
+      var urlObj = new URL(scriptTag.src);
+      baseUrl = urlObj.origin;
+    } catch(e) {}
+  }
+
+  var style = document.createElement('style');
+  style.textContent = `
+    #gidc-chatbot-launcher {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 999999;
+      background: linear-gradient(135deg, #03C75A 0%, #029f47 100%);
+      color: #ffffff;
+      border: none;
+      border-radius: 50px;
+      padding: 14px 22px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(3, 199, 90, 0.4);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    }
+    #gidc-chatbot-launcher:hover {
+      transform: translateY(-3px) scale(1.03);
+      box-shadow: 0 12px 28px rgba(3, 199, 90, 0.5);
+    }
+    #gidc-chatbot-window {
+      position: fixed;
+      bottom: 85px;
+      right: 24px;
+      width: 370px;
+      height: 560px;
+      max-height: calc(100vh - 110px);
+      z-index: 999999;
+      background: #ffffff;
+      border-radius: 20px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      border: 1px solid #e2e8f0;
+      transition: all 0.3s ease;
+    }
+    @media (max-width: 480px) {
+      #gidc-chatbot-window {
+        width: calc(100vw - 32px);
+        right: 16px;
+        bottom: 80px;
+        height: 520px;
+      }
+    }
+    .gidc-chat-header {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e293b;
+    }
+    .gidc-chat-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .gidc-chat-avatar {
+      width: 36px;
+      height: 36px;
+      background: #03C75A;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+    .gidc-chat-name {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .gidc-chat-sub {
+      font-size: 11px;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 2px;
+    }
+    .gidc-online-dot {
+      width: 6px;
+      height: 6px;
+      background: #10b981;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .gidc-chat-close {
+      background: none;
+      border: none;
+      color: #94a3b8;
+      font-size: 24px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .gidc-chat-close:hover {
+      color: #ffffff;
+    }
+    .gidc-chat-body {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      background: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .gidc-msg {
+      max-width: 85%;
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .gidc-msg-bot {
+      align-self: flex-start;
+      background: #ffffff;
+      color: #1e293b;
+      padding: 12px 16px;
+      border-radius: 16px 16px 16px 4px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+      border: 1px solid #e2e8f0;
+      white-space: pre-wrap;
+    }
+    .gidc-msg-user {
+      align-self: flex-end;
+      background: #03C75A;
+      color: #ffffff;
+      padding: 12px 16px;
+      border-radius: 16px 16px 4px 16px;
+      box-shadow: 0 2px 5px rgba(3, 199, 90, 0.2);
+    }
+    .gidc-quick-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 4px;
+    }
+    .gidc-chip {
+      background: #ffffff;
+      border: 1px solid #03C75A;
+      color: #03C75A;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .gidc-chip:hover {
+      background: #03C75A;
+      color: #ffffff;
+    }
+    .gidc-typing {
+      align-self: flex-start;
+      font-size: 12px;
+      color: #64748b;
+      font-style: italic;
+      display: none;
+      padding: 4px 8px;
+    }
+    .gidc-chat-footer {
+      padding: 12px 16px;
+      background: #ffffff;
+      border-top: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .gidc-chat-input {
+      flex: 1;
+      border: 1px solid #cbd5e1;
+      border-radius: 24px;
+      padding: 10px 16px;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .gidc-chat-input:focus {
+      border-color: #03C75A;
+    }
+    .gidc-send-btn {
+      background: #03C75A;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 38px;
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: transform 0.2s;
+      flex-shrink: 0;
+    }
+    .gidc-send-btn:hover {
+      transform: scale(1.08);
+    }
+  `;
+  document.head.appendChild(style);
+
+  var container = document.createElement('div');
+  container.innerHTML = `
+    <button id="gidc-chatbot-launcher">
+      <span>💬</span> <span>GIDC AI 상담</span>
+    </button>
+
+    <div id="gidc-chatbot-window">
+      <div class="gidc-chat-header">
+        <div class="gidc-chat-title">
+          <div class="gidc-chat-avatar">🏢</div>
+          <div>
+            <div class="gidc-chat-name">GIDC광장부동산 AI 실장</div>
+            <div class="gidc-chat-sub"><span class="gidc-online-dot"></span> 24시간 실시간 시세 / 매물 답변</div>
+          </div>
+        </div>
+        <button class="gidc-chat-close" id="gidc-chat-close-btn">&times;</button>
+      </div>
+
+      <div class="gidc-chat-body" id="gidc-chat-messages">
+        <div class="gidc-msg gidc-msg-bot">안녕하세요! GIDC 광장부동산 24시간 AI 실장입니다. 😊\\n로그인 필요 없이 궁금하신 매물, 임대 시세, 위치, 주차 등을 질문해 보세요!</div>
+        <div class="gidc-quick-chips">
+          <button class="gidc-chip" data-msg="사무실 임대 시세 알려주세요">🏢 사무실 시세</button>
+          <button class="gidc-chip" data-msg="위치가 어떻게 되나요?">📍 위치/오시는길</button>
+          <button class="gidc-chip" data-msg="주차 몇 시간 무료인가요?">🚗 주차 안내</button>
+          <button class="gidc-chip" data-msg="대표 전화번호 알려주세요">📞 전화 문의</button>
+        </div>
+        <div class="gidc-typing" id="gidc-typing-indicator">🤖 AI 실장님이 답지 확인 후 작성 중...</div>
+      </div>
+
+      <div class="gidc-chat-footer">
+        <input type="text" id="gidc-chat-input-field" class="gidc-chat-input" placeholder="질문을 입력하세요 (예: 20평 시세)" />
+        <button id="gidc-chat-send-btn" class="gidc-send-btn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(container);
+
+  var launcher = document.getElementById('gidc-chatbot-launcher');
+  var chatWindow = document.getElementById('gidc-chatbot-window');
+  var closeBtn = document.getElementById('gidc-chat-close-btn');
+  var msgContainer = document.getElementById('gidc-chat-messages');
+  var inputField = document.getElementById('gidc-chat-input-field');
+  var sendBtn = document.getElementById('gidc-chat-send-btn');
+  var typingIndicator = document.getElementById('gidc-typing-indicator');
+
+  function toggleWindow() {
+    var isOpen = chatWindow.style.display === 'flex';
+    chatWindow.style.display = isOpen ? 'none' : 'flex';
+    if (!isOpen) {
+      inputField.focus();
+    }
+  }
+
+  launcher.addEventListener('click', toggleWindow);
+  closeBtn.addEventListener('click', toggleWindow);
+
+  function scrollToBottom() {
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+  }
+
+  function appendMessage(text, isUser) {
+    var msgDiv = document.createElement('div');
+    msgDiv.className = 'gidc-msg ' + (isUser ? 'gidc-msg-user' : 'gidc-msg-bot');
+    msgDiv.textContent = text;
+    msgContainer.insertBefore(msgDiv, typingIndicator);
+    scrollToBottom();
+  }
+
+  async function handleSend(textToSend) {
+    var text = textToSend || inputField.value.trim();
+    if (!text) return;
+
+    if (!textToSend) {
+      inputField.value = '';
+    }
+
+    appendMessage(text, true);
+
+    typingIndicator.style.display = 'block';
+    scrollToBottom();
+
+    try {
+      var res = await fetch(baseUrl + '/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text })
+      });
+      var data = await res.json();
+      typingIndicator.style.display = 'none';
+      if (data && data.reply) {
+        appendMessage(data.reply, false);
+      } else {
+        appendMessage('죄송합니다. 잠시 후 다시 시도해 주세요.', false);
+      }
+    } catch(err) {
+      typingIndicator.style.display = 'none';
+      appendMessage('네트워크 연결이 원활하지 않습니다.', false);
+    }
+  }
+
+  sendBtn.addEventListener('click', function() { handleSend(); });
+  inputField.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') handleSend();
+  });
+
+  msgContainer.addEventListener('click', function(e) {
+    if (e.target.classList.contains('gidc-chip')) {
+      var msg = e.target.getAttribute('data-msg');
+      if (msg) handleSend(msg);
+    }
+  });
+
+})();"""
+    return Response(content=js_code, media_type="application/javascript; charset=utf-8")
+
+
+@app.get("/widget-demo", response_class=HTMLResponse)
+async def widget_demo_page():
+    """
+    일반 웹사이트 위젯 실제 적용 및 미리보기 데모 페이지
+    """
+    html_content = """
+    <!DOCTYPE html>
+    <html lang="ko">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GIDC 광장부동산 웹 챗봇 위젯 체험 데모</title>
+        <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;800&display=swap" rel="stylesheet">
+        <style>
+            body {
+                font-family: 'Pretendard', sans-serif;
+                background-color: #f1f5f9;
+                color: #0f172a;
+                margin: 0;
+                padding: 40px 20px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+            }
+            .hero {
+                background: #ffffff;
+                border-radius: 20px;
+                padding: 40px;
+                max-width: 700px;
+                width: 100%;
+                box-shadow: 0 10px 30px rgba(0,0,0,0.05);
+                border: 1px solid #e2e8f0;
+            }
+            h1 { font-size: 2rem; color: #03C75A; margin-top: 0; }
+            p { line-height: 1.6; color: #475569; }
+            .code-box {
+                background: #0f172a;
+                color: #38bdf8;
+                padding: 20px;
+                border-radius: 12px;
+                font-family: monospace;
+                overflow-x: auto;
+                font-size: 0.9rem;
+            }
+            .tag {
+                background: #e0e7ff;
+                color: #4338ca;
+                padding: 4px 10px;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                font-weight: 600;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="hero">
+            <span class="tag">무로그인 웹 위젯 데모</span>
+            <h1>🏢 GIDC 광장부동산 웹 AI 챗봇 데모</h1>
+            <p>이 페이지는 일반 부동산 홈페이지(http/https 불문)에 챗봇 위젯이 설치된 모습을 보여주는 실제 데모 페이지입니다.</p>
+            <p>우측 하단의 <strong>[💬 GIDC AI 상담]</strong> 플로팅 버튼을 클릭하시면 <strong>로그인 없이 누구나 24시간 실시간 AI 상담</strong>을 이용하실 수 있습니다.</p>
+            
+            <h3>💻 사장님 웹사이트 설치 코드 (단 1줄!)</h3>
+            <p>웹사이트의 <code>&lt;/body&gt;</code> 바로 위에 아래 스크립트를 붙여넣으시면 즉시 작동합니다:</p>
+            <div class="code-box">
+                &amp;lt;script src="https://chatbot-9g4i.onrender.com/widget.js"&amp;gt;&amp;lt;/script&amp;gt;
+            </div>
+        </div>
+
+        <!-- 실제 위젯 로드 -->
+        <script src="/widget.js"></script>
+    </body>
+    </html>
+    """
+    return HTMLResponse(content=html_content)
+
