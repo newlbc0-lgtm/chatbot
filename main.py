@@ -137,12 +137,35 @@ def call_claude_ai(user_message: str) -> str:
 
 def smart_direct_knowledge_lookup(user_message: str) -> str:
     """
-    AI 통신에 일시적 장애가 발생하더라도 구글 시트 및 건물 지식 데이터베이스에서
-    직접 정답을 찾아 손님에게 에러 메시지 없이 100% 깔끔한 대답을 즉시 반환합니다.
+    구글 시트에 사장님이 직접 등록하신 키워드(예: '방문객 주차', '영업시간' 등)를 최우선으로 검색하여
+    사장님이 입력하신 정답 그대로 정확히 대답합니다.
     """
-    msg = user_message.strip()
+    msg = user_message.strip().lower()
+    sheet_data = get_live_google_sheets_knowledge()
 
-    # 층고 / 천장고 관련 질문
+    # 1. 사장님이 구글 시트에 직접 작성하신 질문/답변 데이터 파싱 (최우선 순위)
+    lines = sheet_data.split("\n")
+    best_key = ""
+    best_val = ""
+
+    for line in lines:
+        if line.startswith('"') and '","' in line:
+            parts = line.split('","')
+            if len(parts) >= 2:
+                key = parts[0].strip('"').strip()
+                val = '","'.join(parts[1:]).strip('"').strip()
+                
+                # 구글 시트에 적힌 키워드("방문객 주차")가 손님 질문에 포함된 경우
+                if key and key != "질문(키워드)" and (key.lower() in msg or (len(key) >= 2 and key.lower() in msg.replace(" ", ""))):
+                    # 더 구체적인 긴 키워드 우선 (예: "주차" 보다 "방문객 주차" 우선)
+                    if len(key) > len(best_key):
+                        best_key = key
+                        best_val = val
+
+    if best_val:
+        return f"안녕하세요! GIDC 광장부동산입니다. 😊\n\n{best_val}"
+
+    # 2. 건물 설계제원 보조 검색
     if any(k in msg for k in ["층고", "높이", "천장고", "천정고"]):
         if any(f"{i}층" in msg for i in range(2, 5)):
             return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 2층~4층 (드라이브인 공장)의 층고는 5.1m이며, 천장고(실제 이용 높이)는 4.0m입니다."
@@ -154,17 +177,8 @@ def smart_direct_knowledge_lookup(user_message: str) -> str:
             return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지하 1층 층고는 6.0m(천장고 3.3m), 지하 2층 층고는 5.8m(천장고 3.3m)입니다."
         return "안녕하세요! GIDC 광장부동산입니다. 😊 GIDC 지상 5층~26층 사무실 층고는 3.6m (천장고 2.7m), 지상 2층~4층 드라이브인 층고는 5.1m (천장고 4.0m)입니다."
 
-    # 주차 관련 질문
-    if "주차" in msg:
-        return "안녕하세요! GIDC 광장부동산입니다. 🚗 방문 상담 시 지하 주차장 2시간 무료 주차가 지원되며, 건물 총 주차 대수는 1,962대 완비되어 있습니다."
-
-    # 엘리베이터 / 승강기 / 화물 관련 질문
     if any(k in msg for k in ["엘리베이터", "승강기", "화물", "인화물"]):
         return "안녕하세요! GIDC 광장부동산입니다. 🏢 GIDC 건물에는 승객용 25대, 비상용 6대, 38인승 대형 화물용 인화물 3대를 포함해 총 31대의 승강기가 완비되어 있습니다."
-
-    # 위치 / 오시는 길
-    if any(k in msg for k in ["위치", "오시는길", "주소", "어디"]):
-        return "안녕하세요! GIDC 광장부동산입니다. 📍 위치는 경기도 광명시 일직로 43 (GIDC 건물 내 L1층 L021호)입니다. KTX 광명역에서 도보 5~10분 거리에 있습니다. (대표전화: 02-897-8333)"
 
     # 기본 응답
     return "안녕하세요! GIDC 광장부동산입니다. 😊 문의해 주신 내용 확인 후 저희 담당 실장님이 친절히 안내해 드리고 있습니다. 성함과 연락처를 남겨주시면 빠르게 연락드리겠습니다! (대표전화: 02-897-8333)"

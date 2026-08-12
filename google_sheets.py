@@ -56,10 +56,10 @@ def get_live_google_sheets_knowledge() -> str:
     if _cache_data and (now - _cache_time < CACHE_TTL_SECONDS):
         return _cache_data
 
-    tabs_to_fetch = ["", "FAQ", "매물", "설계제원", "건물정보"]
+    tabs_to_fetch = ["", "FAQ", "매물", "물건", "네이버", "네이버매물", "네이버물건", "매물목록", "설계제원", "건물정보"]
     
-    # 5개 탭을 동시에 병렬 다운로드 (속도 800% 향상)
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    # 병렬 다운로드 (속도 800% 향상)
+    with ThreadPoolExecutor(max_workers=len(tabs_to_fetch)) as executor:
         results = list(executor.map(get_sheet_data_as_csv, tabs_to_fetch))
 
     data_parts = []
