@@ -68,16 +68,19 @@ else:
 NAVER_TALK_TOKEN = os.getenv("NAVER_TALK_TOKEN", "Zx3Yx1mLRz2Go1f8muxu")
 
 
+_company_cache: Dict[str, str] = {}
+
 def search_gidc_website_company(user_message: str) -> str:
     """
     http://gidc1535host.mycafe24.com 사이트에서 입점 회사/상호를 실시간 검색하여 동/호수/전화번호를 추출합니다.
     """
+    global _company_cache
     try:
         cleaned = re.sub(r'[^가-힣a-zA-Z0-9\s]', ' ', user_message)
         stop_words = [
             '어디있어', '어디있나요', '어디냐고', '어디에', '어디야', '어디에요', '어디죠', '어디',
-            '위치가', '위치는', '위치', '몇층에', '몇층이야', '몇층', '전화번호', '연락처', '번호',
-            '알려줘', '있어', '인가요', '입점', '회사', '상호', '야', '가', '는', '은', '이', '에', '좀'
+            '몇호야', '몇호인가요', '몇호냐고', '몇호', '위치가', '위치는', '위치', '몇층에', '몇층이야', '몇층',
+            '전화번호', '연락처', '번호', '알려줘', '있어', '인가요', '입점', '회사', '상호', '야', '가', '는', '은', '이', '에', '좀'
         ]
         words = cleaned.split()
         candidates = []
@@ -94,10 +97,17 @@ def search_gidc_website_company(user_message: str) -> str:
             candidates.append(words[0])
 
         for kw in candidates:
+            if kw in _company_cache:
+                print(f"[Website Search Cache Hit ({kw})]: {_company_cache[kw]}")
+                return _company_cache[kw]
+
             try:
                 url = f"http://gidc1535host.mycafe24.com/?s={urllib.parse.quote(kw)}"
-                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                })
+                with urllib.request.urlopen(req, timeout=4.0) as resp:
                     html = resp.read().decode("utf-8")
                 
                 excerpts = re.findall(r'wp-block-post-excerpt.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
@@ -107,7 +117,9 @@ def search_gidc_website_company(user_message: str) -> str:
                     if clean_e and len(clean_e) > 3 and not clean_e.startswith('.'):
                         found.append(clean_e)
                 if found:
-                    return "\n".join(found[:5])
+                    res_str = "\n".join(found[:5])
+                    _company_cache[kw] = res_str
+                    return res_str
             except Exception as inner_err:
                 print(f"[Website Search Query Error ({kw})]: {inner_err}")
                 continue
