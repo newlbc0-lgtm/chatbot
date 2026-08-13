@@ -72,7 +72,7 @@ _company_cache: Dict[str, str] = {}
 
 def search_gidc_website_company(user_message: str) -> str:
     """
-    http://gidc1535host.mycafe24.com 사이트에서 입점 회사/상호를 실시간 검색하여 동/호수/전화번호를 추출합니다.
+    http://gidc1535host.mycafe24.com/wp-json/wp/v2/posts 공식 REST API를 통해 입점 회사/상호를 실시간 검색합니다.
     """
     global _company_cache
     try:
@@ -102,20 +102,25 @@ def search_gidc_website_company(user_message: str) -> str:
                 return _company_cache[kw]
 
             try:
-                url = f"http://gidc1535host.mycafe24.com/?s={urllib.parse.quote(kw)}"
+                url = f"http://gidc1535host.mycafe24.com/wp-json/wp/v2/posts?search={urllib.parse.quote(kw)}"
                 req = urllib.request.Request(url, headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 })
-                with urllib.request.urlopen(req, timeout=4.0) as resp:
-                    html = resp.read().decode("utf-8")
+                with urllib.request.urlopen(req, timeout=3.5) as resp:
+                    raw = resp.read().decode("utf-8")
+                    posts = json.loads(raw)
                 
-                excerpts = re.findall(r'wp-block-post-excerpt.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
                 found = []
-                for e in excerpts:
-                    clean_e = re.sub(r'<[^>]+>', '', e).strip()
-                    if clean_e and len(clean_e) > 3 and not clean_e.startswith('.'):
-                        found.append(clean_e)
+                for p in posts:
+                    title = p.get("title", {}).get("rendered", "")
+                    excerpt = p.get("excerpt", {}).get("rendered", "")
+                    clean_t = re.sub(r'<[^>]+>', '', title).strip()
+                    clean_e = re.sub(r'<[^>]+>', '', excerpt).strip()
+                    if clean_e:
+                        found.append(f"{clean_t}: {clean_e}")
+                    elif clean_t:
+                        found.append(clean_t)
+                
                 if found:
                     res_str = "\n".join(found[:5])
                     _company_cache[kw] = res_str
