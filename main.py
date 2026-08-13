@@ -370,6 +370,11 @@ async def home_page():
                 <p style="margin: 8px 0 0 0; font-size: 0.85rem;">웹 위젯 실시간 작동 미리보기 데모 페이지</p>
             </div>
 
+            <div class="endpoint-card">
+                <div><span class="method get">GET</span><span class="url">/health</span></div>
+                <p style="margin: 8px 0 0 0; font-size: 0.85rem;">Claude AI 및 구글 시트 연동 실시간 헬스체크 API</p>
+            </div>
+
             <div class="footer">
                 FastAPI Chatbot Backend &bull; Powered by Anthropic Claude 3.5
             </div>
@@ -378,6 +383,50 @@ async def home_page():
     </html>
     """
     return HTMLResponse(content=html_content)
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Claude API 통신 및 구글 시트 연동 상태 실시간 헬스체크 API
+    """
+    import time
+    start = time.time()
+    ai_status = "UNKNOWN"
+    active_model = "NONE"
+    
+    if anthropic and ANTHROPIC_API_KEY:
+        try:
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=2.5)
+            res = await asyncio.to_thread(
+                client.messages.create,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=10,
+                messages=[{"role": "user", "content": "ping"}]
+            )
+            ai_status = "HEALTHY"
+            active_model = "claude-haiku-4-5-20251001"
+        except Exception as e:
+            ai_status = f"ERROR: {str(e)}"
+    else:
+        ai_status = "NO_API_KEY"
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    sheet_data = get_live_google_sheets_knowledge()
+
+    return {
+        "status": "healthy" if ai_status == "HEALTHY" else "degraded",
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "claude_ai": {
+            "status": ai_status,
+            "active_model": active_model,
+            "ping_latency_ms": elapsed_ms
+        },
+        "google_sheets": {
+            "status": "HEALTHY" if len(sheet_data) > 0 else "EMPTY",
+            "cached_bytes": len(sheet_data)
+        }
+    }
 
 
 @app.post("/kakao/webhook")

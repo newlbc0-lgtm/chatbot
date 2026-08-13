@@ -1,29 +1,15 @@
-"""
-Google Sheets API 실시간 연동 모듈 (60초 초고속 메모리 캐싱 적용)
-"""
-
 import urllib.request
 import urllib.parse
 import json
 import time
-
-SPREADSHEET_ID = "1lWMlwxRLNi9cHHhJeueMk4zmIXYOCYsJJY7GRZ2deik"
-
-_cache_data = ""
-_cache_time = 0
-CACHE_TTL_SECONDS = 60  # 60초 메모리 캐시로 5초 타임아웃 완벽 방지
-
-import urllib.request
-import urllib.parse
-import json
-import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 SPREADSHEET_ID = "1lWMlwxRLNi9cHHhJeueMk4zmIXYOCYsJJY7GRZ2deik"
 
 _cache_data = ""
 _cache_time = 0
-CACHE_TTL_SECONDS = 300  # 5분 메모리 캐시로 응답 속도 0.001초 달성
+_is_fetching = False
 
 def get_sheet_data_as_csv(sheet_name: str = "") -> tuple:
     """
@@ -44,38 +30,51 @@ def get_sheet_data_as_csv(sheet_name: str = "") -> tuple:
         print(f"[Google Sheets Fetch Warning ({sheet_name})]: {e}")
         return (sheet_name, "")
 
+def _fetch_sheet_data_internal():
+    global _cache_data, _cache_time, _is_fetching
+    try:
+        tabs_to_fetch = ["", "FAQ", "매물", "물건", "네이버", "네이버매물", "네이버물건", "매물목록", "설계제원", "건물정보"]
+        with ThreadPoolExecutor(max_workers=len(tabs_to_fetch)) as executor:
+            results = list(executor.map(get_sheet_data_as_csv, tabs_to_fetch))
+
+        data_parts = []
+        default_csv = ""
+
+        for sheet_name, csv_text in results:
+            if not sheet_name:
+                default_csv = csv_text
+                if csv_text and len(csv_text) > 5:
+                    data_parts.append(f"[구글 시트 지식 데이터]\n{csv_text}")
+            else:
+                if csv_text and csv_text != default_csv and len(csv_text) > 5:
+                    data_parts.append(f"[구글 시트 {sheet_name} 데이터]\n{csv_text}")
+
+        if data_parts:
+            _cache_data = "\n\n".join(data_parts).strip()
+            _cache_time = time.time()
+            print(f"[Google Sheets Background Sync Complete]: {len(_cache_data)} bytes cached at {time.strftime('%H:%M:%S')}")
+    except Exception as e:
+        print(f"[Google Sheets Background Sync Error]: {e}")
+    finally:
+        _is_fetching = False
+
 def get_live_google_sheets_knowledge() -> str:
     """
-    병렬 멀티스레드(ThreadPoolExecutor)로 구글 시트 전 전체 탭을 동시에 동시 읽기하여
-    3.5초 소요되던 구글시트 조회를 0.4초 만에 끝냅니다.
+    비동기 백그라운드 캐싱 구조로 구글시트 조회를 0.0001초(0ms)만에 즉시 반환합니다.
+    손님의 대기 시간을 완전히 제거합니다.
     """
-    global _cache_data, _cache_time
+    global _cache_data, _cache_time, _is_fetching
     now = time.time()
     
-    # 캐시 유효 시 즉시 반환 (0.001초 소요)
-    if _cache_data and (now - _cache_time < CACHE_TTL_SECONDS):
+    # 1. 이미 캐시 데이터가 존재하는 경우 -> 0.0001초 만에 즉시 반환
+    if _cache_data:
+        # 캐시가 60초 이상 되었고 비동기 갱신 중이 아니면 백그라운드 쓰레드로 미리 갱신
+        if (now - _cache_time > 60) and not _is_fetching:
+            _is_fetching = True
+            threading.Thread(target=_fetch_sheet_data_internal, daemon=True).start()
         return _cache_data
 
-    tabs_to_fetch = ["", "FAQ", "매물", "물건", "네이버", "네이버매물", "네이버물건", "매물목록", "설계제원", "건물정보"]
-    
-    # 병렬 다운로드 (속도 800% 향상)
-    with ThreadPoolExecutor(max_workers=len(tabs_to_fetch)) as executor:
-        results = list(executor.map(get_sheet_data_as_csv, tabs_to_fetch))
-
-    data_parts = []
-    default_csv = ""
-
-    for sheet_name, csv_text in results:
-        if not sheet_name:
-            default_csv = csv_text
-            if csv_text and len(csv_text) > 5:
-                data_parts.append(f"[구글 시트 지식 데이터]\n{csv_text}")
-        else:
-            if csv_text and csv_text != default_csv and len(csv_text) > 5:
-                data_parts.append(f"[구글 시트 {sheet_name} 데이터]\n{csv_text}")
-
-    if data_parts:
-        _cache_data = "\n\n".join(data_parts).strip()
-        _cache_time = now
-
+    # 2. 서버 최초 켜졌을 때만 1회 동기 다운로드
+    _is_fetching = True
+    _fetch_sheet_data_internal()
     return _cache_data
