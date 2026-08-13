@@ -1,7 +1,9 @@
 import os
 import json
 import asyncio
+import re
 import urllib.request
+import urllib.parse
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response
@@ -66,9 +68,44 @@ else:
 NAVER_TALK_TOKEN = os.getenv("NAVER_TALK_TOKEN", "Zx3Yx1mLRz2Go1f8muxu")
 
 
+def search_gidc_website_company(user_message: str) -> str:
+    """
+    http://gidc1535host.mycafe24.com 사이트에서 입점 회사/상호를 실시간 검색하여 동/호수/전화번호를 추출합니다.
+    """
+    try:
+        clean_msg = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', user_message).strip()
+        for kw in ["어디", "위치", "몇층", "전화번호", "연락처", "있어", "알려줘", "인가요", "입점", "회사", "상호", "동", "호"]:
+            clean_msg = clean_msg.replace(kw, "").strip()
+        
+        if not clean_msg or len(clean_msg) < 2:
+            clean_msg = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', user_message).strip()
+
+        if not clean_msg or len(clean_msg) < 2:
+            return ""
+
+        encoded_kw = urllib.parse.quote(clean_msg)
+        url = f"http://gidc1535host.mycafe24.com/?s={encoded_kw}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            html = resp.read().decode("utf-8")
+        
+        excerpts = re.findall(r'wp-block-post-excerpt.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
+        found = []
+        for e in excerpts:
+            clean_e = re.sub(r'<[^>]+>', '', e).strip()
+            if clean_e and len(clean_e) > 3 and not clean_e.startswith('.'):
+                found.append(clean_e)
+        
+        if found:
+            return "\n".join(found[:5])
+    except Exception as e:
+        print(f"[Website Search Warning]: {e}")
+    return ""
+
+
 def call_claude_ai(user_message: str) -> str:
     """
-    Claude API를 호출하여 실시간 구글 스프레드시트 기반의 부동산 전문 답변을 생성합니다.
+    Claude API를 호출하여 실시간 구글 스프레드시트 및 웹사이트 회사 검색 기반의 부동산 전문 답변을 생성합니다.
     """
     api_key = ANTHROPIC_API_KEY
     if not anthropic:
@@ -76,12 +113,16 @@ def call_claude_ai(user_message: str) -> str:
         return f"안녕하세요! GIDC광장부동산입니다. 문의주신 내용(\"{user_message}\") 확인 후 안내 도와드리겠습니다."
 
 
-    # 구글 스프레드시트 지식 데이터 실시간 조회
+    # 구글 스프레드시트 지식 데이터 및 입점 사이트 실시간 검색
     live_sheet_knowledge = get_live_google_sheets_knowledge()
+    company_web_search = search_gidc_website_company(user_message)
+    if company_web_search:
+        live_sheet_knowledge += f"\n\n[GIDC 입점업체 홈페이지(gidc1535host.mycafe24.com) 실시간 검색 결과]\n{company_web_search}"
+
     if live_sheet_knowledge:
         system_prompt = f"""
 너는 'GIDC 광장부동산'의 24시간 대표 AI 실장님이야.
-손님의 질문에 아래 [실시간 구글 스프레드시트 지식 데이터(답지)]를 최우선으로 참고해서 답변해줘:
+손님의 질문에 아래 [실시간 구글 스프레드시트 지식 데이터 & 입점업체 검색 정보(답지)]를 최우선으로 참고해서 답변해줘:
 
 {live_sheet_knowledge}
 
@@ -89,11 +130,11 @@ def call_claude_ai(user_message: str) -> str:
 {CLAUDE_SYSTEM_PROMPT}
 
 [최고 엄격 수칙: 답지에 없는 질문 임의 대답 절대 금지]
-1. 절대로 답지(구글 시트/기본 지식)에 나와 있지 않은 대답이나 매물 정보를 스스로 추측하거나 만들어내지 마!
-2. 답지(구글 시트)에 대답이 적혀있지 않은 모든 질문(미등록 질문, 추천 매물 요청, 세부 조건 문의 등)을 받으면, 절대로 임의로 대답하지 말고 반드시 다음과 같이 답변해:
+1. 절대로 답지(구글 시트/입점업체 정보/기본 지식)에 나와 있지 않은 대답이나 매물 정보를 스스로 추측하거나 만들어내지 마!
+2. 손님이 특정 회사/상호명을 물어보면 [GIDC 입점업체 홈페이지 실시간 검색 결과]에 나온 동, 호수, 전화번호 정보를 정확히 안내해줘.
+3. 답지에 대답이 적혀있지 않은 모든 질문(미등록 질문, 추천 매물 요청, 세부 조건 문의 등)을 받으면, 절대로 임의로 대답하지 말고 반드시 다음과 같이 답변해:
    "문의해 주신 내용은 저희 담당 실장님이 정확히 확인한 후 직접 친절히 안내해 드리고 있습니다. 😊 성함과 연락처를 남겨주시면 빠르게 확인하여 바로 연락드리겠습니다!"
-3. 오직 답지(구글 시트)에 적힌 100% 팩트 정보만 답변하고, 답지에 없는 내용은 무조건 확인 후 연락드리겠다고 연락처 수집을 도와줘.
-4. 구글 시트의 층별 범위 표기(예: 지상 5층~26층 층고 3.6m / 천장고 2.7m)는 해당 구간 내 특정 층(5층, 6층, 10층 등) 질문 시 명확하게 적용하여 답변해줘.
+4. 오직 답지에 적힌 100% 팩트 정보만 답변하고, 답지에 없는 내용은 무조건 확인 후 연락드리겠다고 연락처 수집을 도와줘.
 5. 카카오톡 5초 답변 제한에 맞춰 2~3문장 이내로 핵심만 친절하고 명쾌하게 답변해.
 """
     else:
