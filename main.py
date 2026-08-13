@@ -73,31 +73,44 @@ def search_gidc_website_company(user_message: str) -> str:
     http://gidc1535host.mycafe24.com 사이트에서 입점 회사/상호를 실시간 검색하여 동/호수/전화번호를 추출합니다.
     """
     try:
-        clean_msg = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', user_message).strip()
-        for kw in ["어디", "위치", "몇층", "전화번호", "연락처", "있어", "알려줘", "인가요", "입점", "회사", "상호", "동", "호"]:
-            clean_msg = clean_msg.replace(kw, "").strip()
-        
-        if not clean_msg or len(clean_msg) < 2:
-            clean_msg = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', user_message).strip()
+        cleaned = re.sub(r'[^가-힣a-zA-Z0-9\s]', ' ', user_message)
+        stop_words = [
+            '어디있어', '어디있나요', '어디냐고', '어디에', '어디야', '어디에요', '어디죠', '어디',
+            '위치가', '위치는', '위치', '몇층에', '몇층이야', '몇층', '전화번호', '연락처', '번호',
+            '알려줘', '있어', '인가요', '입점', '회사', '상호', '야', '가', '는', '은', '이', '에', '좀'
+        ]
+        words = cleaned.split()
+        candidates = []
+        for w in words:
+            w_c = w
+            for s in stop_words:
+                if w_c.endswith(s) and len(w_c) > len(s):
+                    w_c = w_c[:-len(s)].strip()
+                elif w_c == s:
+                    w_c = ''
+            if len(w_c) >= 2:
+                candidates.append(w_c)
+        if words and len(words[0]) >= 2 and words[0] not in candidates:
+            candidates.append(words[0])
 
-        if not clean_msg or len(clean_msg) < 2:
-            return ""
-
-        encoded_kw = urllib.parse.quote(clean_msg)
-        url = f"http://gidc1535host.mycafe24.com/?s={encoded_kw}"
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=2.0) as resp:
-            html = resp.read().decode("utf-8")
-        
-        excerpts = re.findall(r'wp-block-post-excerpt.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
-        found = []
-        for e in excerpts:
-            clean_e = re.sub(r'<[^>]+>', '', e).strip()
-            if clean_e and len(clean_e) > 3 and not clean_e.startswith('.'):
-                found.append(clean_e)
-        
-        if found:
-            return "\n".join(found[:5])
+        for kw in candidates:
+            try:
+                url = f"http://gidc1535host.mycafe24.com/?s={urllib.parse.quote(kw)}"
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+                with urllib.request.urlopen(req, timeout=2.5) as resp:
+                    html = resp.read().decode("utf-8")
+                
+                excerpts = re.findall(r'wp-block-post-excerpt.*?<p[^>]*>(.*?)</p>', html, re.DOTALL)
+                found = []
+                for e in excerpts:
+                    clean_e = re.sub(r'<[^>]+>', '', e).strip()
+                    if clean_e and len(clean_e) > 3 and not clean_e.startswith('.'):
+                        found.append(clean_e)
+                if found:
+                    return "\n".join(found[:5])
+            except Exception as inner_err:
+                print(f"[Website Search Query Error ({kw})]: {inner_err}")
+                continue
     except Exception as e:
         print(f"[Website Search Warning]: {e}")
     return ""
