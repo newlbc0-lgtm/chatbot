@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 import urllib.request
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Request
@@ -100,14 +101,16 @@ def call_claude_ai(user_message: str) -> str:
 
 
 
-    # 지원 모델 목록 (초고속 답변 0.5초 구현)
+    # 지원 모델 목록 (최신 4.5/3.5/Haiku 지원으로 404 에러 방지)
     candidate_models = [
-        "claude-3-haiku-20240307",
+        "claude-haiku-4-5-20251001",
+        "claude-sonnet-4-5-20250929",
+        "claude-3-5-haiku-20241022",
         "claude-3-5-sonnet-20241022",
-        "claude-3-sonnet-20240229"
+        "claude-3-haiku-20240307"
     ]
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=3.5)
 
     last_error = ""
     for model_name in candidate_models:
@@ -120,7 +123,6 @@ def call_claude_ai(user_message: str) -> str:
                     {"role": "user", "content": user_message}
                 ]
             )
-
 
             ai_reply = response.content[0].text.strip()
             print(f"[Claude AI Reply Success ({model_name})]: {ai_reply}")
@@ -137,8 +139,8 @@ def call_claude_ai(user_message: str) -> str:
 
 def smart_direct_knowledge_lookup(user_message: str) -> str:
     """
-    파이썬 하드코딩(IF문)을 100% 제거하고, 사장님이 구글 시트에 작성하신 모든 행(A열: 질문/키워드, B열: 답변)을
-    동적으로 자동 파싱하여, 어떠한 질문이든 코드 수정 없이 구글 시트 데이터만으로 대답합니다.
+    Claude API 통신 지연/실패 시 구글 시트 키워드를 안전하게 검색합니다.
+    엉뚱한 답변(false positive)을 방지하기 위해 엄격한 키워드 매칭 규칙을 적용합니다.
     """
     msg = user_message.strip().lower().replace(" ", "")
     sheet_data = get_live_google_sheets_knowledge()
@@ -157,15 +159,15 @@ def smart_direct_knowledge_lookup(user_message: str) -> str:
                     continue
 
                 clean_key = key.lower().replace(" ", "")
-                # 키워드 일치 점수 계산 (구글 시트 키워드가 손님 질문에 포함된 경우)
-                if clean_key in msg or (len(clean_key) >= 2 and clean_key in msg):
+                # 엉뚱한 답변 방지: 키워드가 질문에 정확히 포함되거나 질문이 키워드에 포함된 경우만 매칭
+                if clean_key in msg or msg in clean_key:
                     score = len(clean_key) * 10
+                elif len(clean_key) >= 3 and clean_key[:3] in msg:
+                    score = len(clean_key) * 5
                 else:
-                    # 부분 글자 일치 점수
-                    common_chars = set(clean_key) & set(msg)
-                    score = len(common_chars)
+                    score = 0
 
-                if score > max_score and score >= 2:
+                if score > max_score and score >= 10:
                     max_score = score
                     best_val = val
 
@@ -390,8 +392,8 @@ async def kakao_webhook(request: Request):
 
         print(f"[Kakao Webhook Received] Utterance: '{user_utterance}' | Bot: '{bot_id}'")
 
-        # Claude AI 응답 생성
-        reply_text = call_claude_ai(user_utterance)
+        # Claude AI 응답 생성 (이벤트 루프 블로킹 방지를 위해 쓰레드풀 처리)
+        reply_text = await asyncio.to_thread(call_claude_ai, user_utterance)
 
         # 자주 묻는 질문 빠른 답장 버튼 (Quick Replies)
         quick_replies = [
@@ -460,8 +462,8 @@ async def naver_webhook(request: Request):
         print(f"[Naver TalkTalk Received] Event: '{event_type}' | User: '{user_key}' | Text: '{text_content}'")
 
         if event_type == "send" and user_key and text_content:
-            # Claude AI 응답 생성
-            reply_text = call_claude_ai(text_content)
+            # Claude AI 응답 생성 (이벤트 루프 블로킹 방지를 위해 쓰레드풀 처리)
+            reply_text = await asyncio.to_thread(call_claude_ai, text_content)
             send_naver_talktalk_reply(user_key, reply_text)
 
         return JSONResponse(content={"resultCode": "S0000", "message": "Success"}, status_code=200)
@@ -489,7 +491,7 @@ async def web_chat(req: WebChatRequest):
             return JSONResponse(content={"reply": "질문을 입력해 주세요.", "status": "error"}, status_code=400)
 
         print(f"[Web Chat Received]: '{user_msg}'")
-        reply = call_claude_ai(user_msg)
+        reply = await asyncio.to_thread(call_claude_ai, user_msg)
         return JSONResponse(content={"reply": reply, "status": "success"}, status_code=200)
 
     except Exception as e:
