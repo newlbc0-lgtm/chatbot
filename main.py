@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import re
+import ssl
 import urllib.request
 import urllib.parse
 from typing import Dict, Any, List, Optional
@@ -102,11 +103,12 @@ def search_gidc_website_company(user_message: str) -> str:
                 return _company_cache[kw]
 
             try:
-                url = f"http://gidc1535host.mycafe24.com/wp-json/wp/v2/posts?search={urllib.parse.quote(kw)}"
+                url = f"https://gidc1535host.mycafe24.com/wp-json/wp/v2/posts?search={urllib.parse.quote(kw)}"
                 req = urllib.request.Request(url, headers={
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 })
-                with urllib.request.urlopen(req, timeout=3.5) as resp:
+                ctx = ssl._create_unverified_context()
+                with urllib.request.urlopen(req, timeout=3.5, context=ctx) as resp:
                     raw = resp.read().decode("utf-8")
                     posts = json.loads(raw)
                 
